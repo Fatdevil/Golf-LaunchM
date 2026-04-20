@@ -32,7 +32,7 @@ async def broadcast_shots(shot_queue):
 async def start_websocket_server(shot_queue):
     print("WebSocket Server listening on 0.0.0.0:8765")
     
-    server = await websockets.serve(client_handler, "0.0.0.0", 8765)
+    server = await websockets.serve(client_handler, "0.0.0.0", 8765, ping_interval=20, ping_timeout=10)
     
     # Run the broadcast task
     await broadcast_shots(shot_queue)

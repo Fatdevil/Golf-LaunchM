@@ -38,9 +38,20 @@ async def handle_client(reader, writer, session_id, shot_queue):
                     
                     is_heartbeat = options.get("IsHeartBeat", False)
                     
+                    is_ready_signal = (options.get("LaunchMonitorIsReady", False) 
+                                       and not options.get("ContainsBallData", False))
+                    if is_ready_signal:
+                        # Ack but skip processing
+                        response = {"Code": 200, "Message": "Ready acknowledged"}
+                        writer.write(json.dumps(response).encode('utf-8'))
+                        await writer.drain()
+                        continue
+                        
                     if not is_heartbeat:
                         # Process shot data
-                        if shot_data.BallData and shot_data.ShotNumber > 0:
+                        if (options.get("ContainsBallData", False) and 
+                            shot_data.BallData and 
+                            shot_data.ShotNumber > 0):
                             shot_id = str(uuid.uuid4())
                             now_utc = datetime.now(timezone.utc)
                             # Custom timestamp format requested: 2026-04-20T08:33:00.000Z
