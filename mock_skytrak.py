@@ -147,5 +147,10 @@ async def main():
     print("\n✅ All 5 shots sent and acknowledged" if ack_count == 5 else f"\n⚠️ Sent {ack_count}/5 shots correctly")
     print(f"✅ WebSocket received {ws_received_count}/5 shots")
 
+import sys
 if __name__ == "__main__":
+    if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
     asyncio.run(main())

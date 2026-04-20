@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import uuid
 from tcp_server import start_gspro_server
 from websocket_server import start_websocket_server
@@ -26,6 +27,10 @@ async def main():
         pass
 
 if __name__ == "__main__":
+    if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

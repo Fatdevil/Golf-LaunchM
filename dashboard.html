@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyTrak Local Dashboard</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --success: #10b981;
+        }
+        
+        body {
+            margin: 0;
+            padding: 2rem;
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .status.disconnected {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .status::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .metric-card {
+            background: var(--panel-bg);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .metric-card.highlight {
+            border-color: var(--accent);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0;
+            display: flex;
+            align-items: baseline;
+            gap: 0.25rem;
+        }
+
+        .metric-unit {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .log-panel {
+            max-width: 1200px;
+            margin: 3rem auto;
+            background: var(--panel-bg);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .log-panel h3 {
+            margin-top: 0;
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .raw-data {
+            background: #0f172a;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #10b981;
+            overflow-x: auto;
+            height: 200px;
+            overflow-y: auto;
+        }
+        
+        .raw-data p { margin: 0 0 0.5rem 0; }
+        
+        /* Initial pulse animation for new data */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+        .anim-pulse {
+            animation: pulse 0.3s ease-in-out;
+        }
+
+    </style>
+</head>
+<body>
+    <div style="max-width: 1200px; margin: 0 auto;">
+        <div class="header">
+            <div>
+                <h1>SkyTrak Live Monitor</h1>
+                <p style="color: var(--text-secondary); margin: 0.2rem 0 0 0;">Waiting for Shot #<span id="next-shot">1</span></p>
+            </div>
+            <div id="connection-status" class="status disconnected">Disconnected</div>
+        </div>
+
+        <div class="grid">
+            <div class="metric-card highlight">
+                <div class="metric-label">Carry Distance</div>
+                <div class="metric-value"><span id="val-carry">--</span> <span class="metric-unit">yds</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Ball Speed</div>
+                <div class="metric-value"><span id="val-speed">--</span> <span class="metric-unit">mph</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Launch Angle</div>
+                <div class="metric-value"><span id="val-launch-angle">--</span> <span class="metric-unit">°</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Direction</div>
+                <div class="metric-value"><span id="val-direction">--</span> <span class="metric-unit">°</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Spin</div>
+                <div class="metric-value"><span id="val-total-spin">--</span> <span class="metric-unit">rpm</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Spin Axis</div>
+                <div class="metric-value"><span id="val-spin-axis">--</span> <span class="metric-unit">°</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Back Spin</div>
+                <div class="metric-value"><span id="val-back-spin">--</span> <span class="metric-unit">rpm</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Side Spin</div>
+                <div class="metric-value"><span id="val-side-spin">--</span> <span class="metric-unit">rpm</span></div>
+            </div>
+        </div>
+
+        <div class="log-panel">
+            <h3>Recent Event Log</h3>
+            <div class="raw-data" id="log-output">
+                <p>Waiting for WebSocket data on ws://localhost:8765...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('connection-status');
+        const logEl = document.getElementById('log-output');
+        const nextShotEl = document.getElementById('next-shot');
+        
+        let ws;
+        
+        function connect() {
+            ws = new WebSocket('ws://localhost:8765');
+            
+            ws.onopen = () => {
+                statusEl.textContent = 'Connected to Bridge';
+                statusEl.className = 'status';
+                addLog('Connected to ws://localhost:8765');
+            };
+            
+            ws.onclose = () => {
+                statusEl.textContent = 'Disconnected - Retrying...';
+                statusEl.className = 'status disconnected';
+                setTimeout(connect, 3000);
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.event === 'shot') {
+                        updateDashboard(data);
+                        addLog(`SHOT #${data.shot_number} RECEIVED: ${JSON.stringify(data.ball)}`);
+                    }
+                } catch (e) {
+                    console.error('Error parsing message', e);
+                }
+            };
+        }
+
+        function updateDashboard(data) {
+            const b = data.ball;
+            if(!b) return;
+
+            document.getElementById('val-carry').textContent = b.carry_yards?.toFixed(1) || '0.0';
+            document.getElementById('val-speed').textContent = b.speed_mph?.toFixed(1) || '0.0';
+            document.getElementById('val-launch-angle').textContent = b.launch_angle_deg?.toFixed(1) || '0.0';
+            
+            let dir = b.launch_direction_deg || 0;
+            let dirStr = Math.abs(dir).toFixed(1) + (dir > 0 ? ' R' : dir < 0 ? ' L' : '');
+            document.getElementById('val-direction').textContent = dirStr;
+
+            document.getElementById('val-total-spin').textContent = Math.round(b.total_spin_rpm || 0);
+            document.getElementById('val-back-spin').textContent = Math.round(b.back_spin_rpm || 0);
+            document.getElementById('val-side-spin').textContent = Math.round(b.side_spin_rpm || 0);
+            document.getElementById('val-spin-axis').textContent = b.spin_axis_deg?.toFixed(1) || '0.0';
+            
+            nextShotEl.textContent = (data.shot_number || 0) + 1;
+
+            document.querySelectorAll('.metric-card').forEach(el => {
+                el.classList.remove('anim-pulse');
+                void el.offsetWidth;
+                el.classList.add('anim-pulse');
+            });
+        }
+
+        function addLog(msg) {
+            const p = document.createElement('p');
+            const time = new Date().toLocaleTimeString();
+            p.textContent = `[${time}] ${msg}`;
+            logEl.prepend(p);
+        }
+
+        connect();
+    </script>
+</body>
+</html>
