@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyTrak 3D Trajectory Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #0a0f1a;
+            color: #ffffff;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #side-panel {
+            width: 320px;
+            background-color: #0f1623;
+            border-left: 1px solid #1a2639;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .top-bar {
+            padding: 15px 20px;
+            border-bottom: 1px solid #1a2639;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: #8899aa;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ef4444;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .section {
+            padding: 20px;
+            border-bottom: 1px solid #1a2639;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            color: #8899aa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+        }
+
+        .primary-metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .metric {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .metric.highlight .val {
+            color: #00d4ff;
+        }
+
+        .metric .lbl {
+            font-size: 0.75rem;
+            color: #8899aa;
+        }
+
+        .metric .val {
+            font-size: 1.5rem;
+            font-family: monospace;
+            font-weight: 700;
+        }
+
+        .metric .unit {
+            font-size: 0.8rem;
+            color: #8899aa;
+            font-family: sans-serif;
+            font-weight: normal;
+        }
+
+        .spin-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .spin-item {
+            background: rgba(255,255,255,0.03);
+            padding: 10px;
+            border-radius: 6px;
+        }
+        
+        .spin-item .val {
+            font-size: 1.1rem;
+            margin-top: 4px;
+            font-family: monospace;
+        }
+
+        .shape-indicator {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-top: 10px;
+            border: 1px solid currentColor;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 0.85rem;
+        }
+
+        .history-item:hover {
+            background: rgba(255,255,255,0.08);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+        
+        .stats-grid .val {
+            color: #00d4ff;
+            font-weight: bold;
+        }
+        .stats-grid > div {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    
+    <div id="side-panel">
+        <div class="top-bar">
+            <strong>SkyTrak 3D</strong>
+            <div class="status">
+                <span id="ws-status-text">Disconnected</span>
+                <div id="ws-status" class="status-dot"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Current Shot</div>
+            <div class="primary-metrics">
+                <div class="metric highlight" style="grid-column: 1 / -1;">
+                    <span class="lbl">Carry Distance</span>
+                    <span class="val" id="ui-carry">-- <span class="unit">yds</span></span>
+                </div>
+                <div class="metric">
+                    <span class="lbl">Ball Speed</span>
+                    <span class="val" id="ui-speed">-- <span class="unit">mph</span></span>
+                </div>
+                <div class="metric">
+                    <span class="lbl">Launch Angle</span>
+                    <span class="val" id="ui-vla">-- <span class="unit">°</span></span>
+                </div>
+                <div class="metric">
+                    <span class="lbl">Direction</span>
+                    <span class="val" id="ui-direction">-- <span class="unit">°</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Spin Data</div>
+            <div class="spin-grid">
+                <div class="spin-item">
+                    <div class="lbl">Total Spin</div>
+                    <div class="val" id="ui-total-spin">--</div>
+                </div>
+                <div class="spin-item">
+                    <div class="lbl">Back Spin</div>
+                    <div class="val" id="ui-back-spin">--</div>
+                </div>
+                <div class="spin-item">
+                    <div class="lbl">Side Spin</div>
+                    <div class="val" id="ui-side-spin">--</div>
+                </div>
+                <div class="spin-item">
+                    <div class="lbl">Spin Axis</div>
+                    <div class="val" id="ui-spin-axis">--</div>
+                </div>
+            </div>
+            <div id="ui-shape" class="shape-indicator" style="color: #ffffff;">STRAIGHT</div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Stats (Avg)</div>
+            <div class="stats-grid">
+                <div><span>Carry</span><span class="val" id="stat-carry">-- yds</span></div>
+                <div><span>Speed</span><span class="val" id="stat-speed">-- mph</span></div>
+                <div><span>Launch</span><span class="val" id="stat-vla">-- °</span></div>
+                <div><span>Dispersion</span><span class="val" id="stat-dispersion">-- yds</span></div>
+            </div>
+        </div>
+
+        <div class="section" style="flex: 1;">
+            <div class="section-title">History</div>
+            <div class="history-list" id="history-container">
+                <!-- Items inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js Dependencies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // --- 1. SET UP 3D SCENE ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0f1a);
+        scene.fog = new THREE.Fog(0x0a0f1a, 50, 400);
+
+        const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(0, 3, 5); 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, -50);
+        controls.enableDamping = true;
+        controls.update();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        // Environment
+        const groundGeo = new THREE.PlaneGeometry(150, 500); 
+        const groundMat = new THREE.MeshBasicMaterial({ color: 0x112211, side: THREE.DoubleSide });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.z = -200;
+        scene.add(ground);
+
+        const gridHelper = new THREE.GridHelper(500, 50, 0x1a2f1a, 0x1a2f1a);
+        gridHelper.position.set(0, 0.01, -200);
+        scene.add(gridHelper);
+
+        const targetMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+        const targetGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0.02, 0),
+            new THREE.Vector3(0, 0.02, -450)
+        ]);
+        scene.add(new THREE.Line(targetGeo, targetMat));
+
+        for(let d=50; d<=400; d+=50) {
+            const hGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-30, 0.02, -d),
+                new THREE.Vector3(30, 0.02, -d)
+            ]);
+            const hMat = new THREE.LineBasicMaterial({ color: 0x334433 });
+            scene.add(new THREE.Line(hGeo, hMat));
+        }
+
+        const teeGeo = new THREE.CircleGeometry(0.2, 32);
+        const teeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const tee = new THREE.Mesh(teeGeo, teeMat);
+        tee.rotation.x = -Math.PI / 2;
+        tee.position.y = 0.03;
+        scene.add(tee);
+
+
+        // --- 2. PHYSICS ENGINE ---
+        function computeTrajectory(ball) {
+            const g = 9.81;
+            const rho = 1.225;
+            const ball_mass = 0.04593;
+            const ball_radius = 0.02135;
+            const ball_area = Math.PI * ball_radius * ball_radius;
+            const Cd = 0.23;
+
+            const v0 = ball.speed_mph * 0.44704;
+            const launch_angle = ball.launch_angle_deg * Math.PI / 180;
+            const direction_angle = ball.launch_direction_deg * Math.PI / 180;
+            
+            let vx = v0 * Math.cos(launch_angle) * Math.cos(direction_angle);
+            let vy = v0 * Math.sin(launch_angle);
+            let vz = v0 * Math.cos(launch_angle) * Math.sin(direction_angle); // drift
+
+            const back_spin_rpm = ball.back_spin_rpm || 0;
+            let Cl = 0.21 * Math.pow(Math.abs(back_spin_rpm) / 3000, 0.4);
+            if(isNaN(Cl)) Cl = 0;
+
+            const side_spin_rpm = ball.side_spin_rpm || 0;
+            const Cs = side_spin_rpm / 50000;
+
+            let x = 0, y = 0, z = 0;
+            const dt = 0.005;
+            const points = [];
+
+            while (y >= 0) {
+                if (x > 1500) break; // emergency break
+
+                // Convert to yards and map to Three.js axes
+                // Three coords: X=drift(right/left), Y=up, Z=downrange(negative)
+                points.push(new THREE.Vector3(
+                    z * 1.09361,
+                    y * 1.09361,
+                    -x * 1.09361
+                ));
+
+                const v_total = Math.sqrt(vx*vx + vy*vy + vz*vz);
+                if (v_total < 0.1) break;
+                
+                const Fd = 0.5 * rho * v_total * v_total * ball_area * Cd;
+                const ax_drag = -(Fd / ball_mass) * (vx / v_total);
+                const ay_drag = -(Fd / ball_mass) * (vy / v_total);
+                const az_drag = -(Fd / ball_mass) * (vz / v_total);
+                
+                const Fl = 0.5 * rho * v_total * v_total * ball_area * Cl;
+                const ay_lift = Fl / ball_mass;
+                const az_side = Cs * v_total;
+
+                vx += ax_drag * dt;
+                vy += (ay_drag + ay_lift - g) * dt;
+                vz += (az_drag + az_side) * dt;
+                
+                x += vx * dt;
+                y += vy * dt;
+                z += vz * dt;
+            }
+            
+            // force last y to 0
+            if(points.length > 0) points[points.length-1].y = 0;
+            
+            return points;
+        }
+
+
+        // --- 3. ANIMATION & STATE MANAGEMENT ---
+        let pastTrails = [];
+        let currentAnimation = null;
+        let shotHistory = [];
+
+        function processShotData(shotData, isReplay = false) {
+            const ball = shotData.ball;
+            if(!ball) return;
+
+            // Finalize current animation instantly if still running
+            if (currentAnimation) {
+                finalizeAnimation(currentAnimation);
+            }
+
+            const points = computeTrajectory(ball);
+            if(points.length === 0) return;
+
+            // Determine Shape & Color
+            let shape = "STRAIGHT";
+            let colorHex = 0xffffff;
+            if (ball.spin_axis_deg < -5) {
+                shape = "DRAW";
+                colorHex = 0xff4444; // Red
+            } else if (ball.spin_axis_deg > 5) {
+                shape = "FADE";
+                colorHex = 0x4488ff; // Blue
+            }
+
+            // Create Trail geometry (empty initially)
+            const trailMat = new THREE.LineBasicMaterial({ 
+                color: colorHex, linewidth: 2 
+            });
+            const trailGeo = new THREE.BufferGeometry().setFromPoints([points[0]]);
+            const trailMesh = new THREE.Line(trailGeo, trailMat);
+            scene.add(trailMesh);
+
+            // Create Ball sphere
+            const sphereGeo = new THREE.SphereGeometry(0.5, 16, 16);
+            const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+            sphereMesh.position.copy(points[0]);
+            scene.add(sphereMesh);
+
+            // Create Apex
+            let apexP = points[0];
+            for(let p of points) if(p.y > apexP.y) apexP = p;
+            const apexGeo = new THREE.SphereGeometry(0.3, 8, 8);
+            const apexMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const apexMesh = new THREE.Mesh(apexGeo, apexMat);
+            apexMesh.position.copy(apexP);
+            apexMesh.visible = false;
+            scene.add(apexMesh);
+
+            // Create Landing
+            const landGeo = new THREE.CircleGeometry(0.8, 16);
+            const landMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.8 });
+            const landMesh = new THREE.Mesh(landGeo, landMat);
+            landMesh.rotation.x = -Math.PI / 2;
+            landMesh.position.copy(points[points.length - 1]);
+            landMesh.position.y = 0.05;
+            landMesh.visible = false;
+            scene.add(landMesh);
+
+            currentAnimation = {
+                points: points,
+                trail: trailMesh,
+                ball: sphereMesh,
+                apex: apexMesh,
+                landing: landMesh,
+                startTime: Date.now(),
+                duration: 2500 // 2.5s fixed duration
+            };
+
+            updateUI(shotData, shape, colorHex);
+
+            if (!isReplay) {
+                shotHistory.unshift(shotData);
+                if (shotHistory.length > 20) shotHistory.pop();
+                updateStats();
+                renderHistoryList();
+            }
+        }
+
+        function finalizeAnimation(anim) {
+            anim.trail.geometry.setFromPoints(anim.points);
+            anim.ball.position.copy(anim.points[anim.points.length - 1]);
+            anim.apex.visible = true;
+            anim.landing.visible = true;
+            
+            // Dim
+            anim.trail.material.transparent = true;
+            anim.trail.material.opacity = 0.3;
+            anim.ball.material.transparent = true;
+            anim.ball.material.opacity = 0.3;
+            
+            pastTrails.push(anim);
+            while (pastTrails.length > 5) {
+                let old = pastTrails.shift();
+                scene.remove(old.trail);
+                scene.remove(old.ball);
+                scene.remove(old.apex);
+                scene.remove(old.landing);
+            }
+            
+            if (currentAnimation === anim) currentAnimation = null;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            if (currentAnimation) {
+                const now = Date.now();
+                const elapsed = now - currentAnimation.startTime;
+                let progress = elapsed / currentAnimation.duration;
+                
+                if (progress >= 1.0) {
+                    finalizeAnimation(currentAnimation);
+                } else {
+                    const idx = Math.floor(progress * (currentAnimation.points.length - 1));
+                    currentAnimation.trail.geometry.setFromPoints(currentAnimation.points.slice(0, idx+1));
+                    currentAnimation.ball.position.copy(currentAnimation.points[idx]);
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+
+        // --- 4. UI & WEBSOCKET LOGIC ---
+        function updateUI(shot, shapeLabel, colorHex) {
+            const b = shot.ball;
+            document.getElementById('ui-carry').innerHTML = `${b.carry_yards.toFixed(1)} <span class="unit">yds</span>`;
+            document.getElementById('ui-speed').innerHTML = `${b.speed_mph.toFixed(1)} <span class="unit">mph</span>`;
+            document.getElementById('ui-vla').innerHTML = `${b.launch_angle_deg.toFixed(1)} <span class="unit">°</span>`;
+            
+            let dir = b.launch_direction_deg;
+            let dirStr = Math.abs(dir).toFixed(1) + (dir > 0 ? ' R' : dir < 0 ? ' L' : '');
+            document.getElementById('ui-direction').innerHTML = `${dirStr} <span class="unit">°</span>`;
+
+            document.getElementById('ui-total-spin').innerText = Math.round(b.total_spin_rpm) + " rpm";
+            document.getElementById('ui-back-spin').innerText = Math.round(b.back_spin_rpm) + " rpm";
+            document.getElementById('ui-side-spin').innerText = Math.round(b.side_spin_rpm) + " rpm";
+            document.getElementById('ui-spin-axis').innerText = b.spin_axis_deg.toFixed(1) + "°";
+
+            const shapeEl = document.getElementById('ui-shape');
+            shapeEl.innerText = shapeLabel;
+            shapeEl.style.color = colorHex === 0xffffff ? '#ffffff' : (colorHex === 0xff4444 ? '#ff4444' : '#4488ff');
+            shapeEl.style.borderColor = shapeEl.style.color;
+        }
+
+        function updateStats() {
+            if(shotHistory.length < 3) return;
+            
+            let tCarry = 0, tSpeed = 0, tVLA = 0;
+            let minX = 9999, maxX = -9999;
+            let count = shotHistory.length;
+
+            for(let s of shotHistory) {
+                tCarry += s.ball.carry_yards;
+                tSpeed += s.ball.speed_mph;
+                tVLA += s.ball.launch_angle_deg;
+                
+                // roughly recalculate landing X to get dispersion based strictly on input carry & angle
+                // A simpler fast way: direction drift at landing is approx carry * tan(angle). 
+                // We'll use the physics engine landing point for absolute accuracy
+                let pts = computeTrajectory(s.ball);
+                let landX = pts[pts.length-1].x;
+                if(landX < minX) minX = landX;
+                if(landX > maxX) maxX = landX;
+            }
+
+            document.getElementById('stat-carry').innerText = (tCarry/count).toFixed(1) + ' yds';
+            document.getElementById('stat-speed').innerText = (tSpeed/count).toFixed(1) + ' mph';
+            document.getElementById('stat-vla').innerText = (tVLA/count).toFixed(1) + ' °';
+            document.getElementById('stat-dispersion').innerText = (maxX - minX).toFixed(1) + ' yds';
+        }
+
+        function renderHistoryList() {
+            const container = document.getElementById('history-container');
+            container.innerHTML = '';
+            
+            // Show up to 10
+            for(let i=0; i<Math.min(shotHistory.length, 10); i++) {
+                let s = shotHistory[i];
+                let div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerHTML = `
+                    <span><strong>#${s.shot_number}</strong></span>
+                    <span>${s.ball.carry_yards.toFixed(1)}y</span>
+                    <span>${s.ball.speed_mph.toFixed(1)}mph</span>
+                `;
+                div.onclick = () => processShotData(s, true);
+                container.appendChild(div);
+            }
+        }
+
+        function connectWS() {
+            const ws = new WebSocket('ws://localhost:8765');
+            ws.onopen = () => {
+                document.getElementById('ws-status').style.backgroundColor = '#10b981';
+                document.getElementById('ws-status-text').innerText = 'Connected';
+            };
+            ws.onclose = () => {
+                document.getElementById('ws-status').style.backgroundColor = '#ef4444';
+                document.getElementById('ws-status-text').innerText = 'Disconnected';
+                setTimeout(connectWS, 3000);
+            };
+            ws.onmessage = (msg) => {
+                try {
+                    const data = JSON.parse(msg.data);
+                    if(data.event === 'shot') {
+                        processShotData(data, false);
+                    }
+                } catch(e) {}
+            };
+        }
+
+        connectWS();
+
+    </script>
+</body>
+</html>
