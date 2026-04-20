@@ -167,11 +167,40 @@
             gap: 3px;
         }
 
+        .cam-btn {
+            background: rgba(15, 22, 35, 0.8);
+            border: 1px solid #1a2639;
+            color: #8899aa;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            backdrop-filter: blur(4px);
+            transition: all 0.2s;
+        }
+        .cam-btn:hover {
+            color: #fff;
+            border-color: #00d4ff;
+        }
+        .cam-btn.active {
+            color: #00d4ff;
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.1);
+        }
+
     </style>
 </head>
 <body>
 
-    <div id="canvas-container"></div>
+    <div id="canvas-container">
+        <div id="camera-controls" style="position: absolute; top: 20px; left: 20px; z-index: 10; display: flex; gap: 10px;">
+            <button class="cam-btn" onclick="setCamera('DTL')">Bakom (Down The Line)</button>
+            <button class="cam-btn active" id="btn-tv" onclick="setCamera('TV')">TV-Vinkel</button>
+            <button class="cam-btn" onclick="setCamera('TOP')">Drönare</button>
+            <button class="cam-btn" id="btn-autorotate" onclick="toggleAutoRotate()">Auto-snurra 🎬</button>
+        </div>
+    </div>
     
     <div id="side-panel">
         <div class="top-bar">
@@ -258,7 +287,8 @@
 
         const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
         camera.position.set(-30, 25, -20);
-        camera.lookAt(80, 0, 0);
+        // We do not call camera.lookAt manually here when using OrbitControls, 
+        // since controls.target handles the focal point automatically.
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
@@ -266,9 +296,40 @@
         container.appendChild(renderer.domElement);
 
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.target.set(80, 0, 0);
+        // Måla in kameramålet i mitten av fairway för perfekt rotation
+        controls.target.set(0, 0, -100); 
         controls.enableDamping = true;
+        controls.autoRotateSpeed = 1.5;
         controls.update();
+
+        function setCamera(mode) {
+            controls.autoRotate = false;
+            document.getElementById('btn-autorotate').classList.remove('active');
+            document.getElementById('btn-tv').classList.remove('active');
+            
+            if (mode === 'DTL') {
+                camera.position.set(0, 3, 5);
+                controls.target.set(0, 0, -100);
+            } else if (mode === 'TV') {
+                camera.position.set(-30, 25, -20);
+                controls.target.set(0, 0, -100);
+                document.getElementById('btn-tv').classList.add('active');
+            } else if (mode === 'TOP') {
+                camera.position.set(0, 150, -150);
+                controls.target.set(0, 0, -151);
+            }
+            controls.update();
+        }
+
+        function toggleAutoRotate() {
+            controls.autoRotate = !controls.autoRotate;
+            const btn = document.getElementById('btn-autorotate');
+            if (controls.autoRotate) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        }
 
         window.addEventListener('resize', () => {
             camera.aspect = container.clientWidth / container.clientHeight;
