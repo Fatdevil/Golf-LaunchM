@@ -281,21 +281,74 @@ class SwingAnalyzer:
             
         arm_speed = np.mean(speeds[max(0, impact_frame-5):impact_frame]) * 1920.0 # roughly px
         
+        # 1. Wrist lag
+        lag_frame_idx = max(0, impact_frame - 10)
+        lag_lm = lms_seq[lag_frame_idx]
+        wrist_lag = 0.0
+        if lag_lm and lag_lm[12] and lag_lm[14] and lag_lm[16]:
+            # right_shoulder(12) → right_elbow(14) → right_wrist(16)
+            sh = lag_lm[12]
+            el = lag_lm[14]
+            wr = lag_lm[16]
+            v1_x, v1_y = el["x"] - sh["x"], el["y"] - sh["y"]
+            v2_x, v2_y = wr["x"] - el["x"], wr["y"] - el["y"]
+            dot = v1_x * v2_x + v1_y * v2_y
+            cross = v1_x * v2_y - v1_y * v2_x
+            wrist_lag = np.degrees(np.arctan2(cross, dot))
+
+        # 2. Hip lead frames
+        hip_vel = [0] * total_frames
+        sh_vel = [0] * total_frames
+        for i in range(1, total_frames):
+            if lms_seq[i-1] and lms_seq[i]:
+                hip_vel[i] = abs(lms_seq[i][23]["x"] - lms_seq[i-1][23]["x"])
+                sh_vel[i] = abs(lms_seq[i][11]["x"] - lms_seq[i-1][11]["x"])
+        
+        peak_hip_frame = np.argmax(hip_vel)
+        peak_shoulder_frame = np.argmax(sh_vel)
+        hip_lead = 0
+        if hip_vel[peak_hip_frame] > 0 and sh_vel[peak_shoulder_frame] > 0:
+            hip_lead = int(peak_shoulder_frame - peak_hip_frame)
+
+        # 3. Spine angle at address
+        spine_angles = []
+        for i in range(min(5, total_frames)):
+            lm = lms_seq[i]
+            if lm and lm[11] and lm[12] and lm[23] and lm[24]:
+                mx_sh = (lm[11]["x"] + lm[12]["x"]) / 2.0
+                my_sh = (lm[11]["y"] + lm[12]["y"]) / 2.0
+                mx_hip = (lm[23]["x"] + lm[24]["x"]) / 2.0
+                my_hip = (lm[23]["y"] + lm[24]["y"]) / 2.0
+                vx, vy = mx_sh - mx_hip, my_sh - my_hip
+                spine_angles.append(np.degrees(np.arctan2(abs(vx), abs(vy))))
+        spine_angle = float(np.mean(spine_angles)) if spine_angles else 0.0
+
+        # 4. Follow through completeness
+        ft_score = 0.0
+        last_lm = lms_seq[-1]
+        if last_lm and last_lm[15] and last_lm[11] and last_lm[13] and last_lm[12]:
+            conditions = 0
+            if last_lm[15]["y"] < last_lm[11]["y"] - 0.1: conditions += 1
+            if last_lm[13]["x"] > last_lm[11]["x"]: conditions += 1
+            if abs(last_lm[12]["y"] - last_lm[11]["y"]) <= 0.15: conditions += 1
+            ft_score = conditions / 3.0
+
+        # 5. Weight shift
         weight_shift = 0.5
-        if lms_seq[0] and imp_lm:
+        if lms_seq[0] and lms_seq[0][23] and imp_lm and imp_lm[23]:
             shift = lms_seq[0][23]["x"] - imp_lm[23]["x"]
-            weight_shift = 0.5 + shift # mocked
+            weight_shift = max(0.0, min(1.0, 0.5 + shift * 2.0))
             
         feats = {
             "impact_frame": int(impact_frame),
             "hip_rotation_at_impact_deg": float(hip_rot),
             "shoulder_tilt_at_impact_deg": float(sh_tilt),
-            "wrist_lag_deg": 78.0, # mocked angle
+            "wrist_lag_deg": float(wrist_lag),
             "weight_shift_ratio": float(weight_shift),
-            "hip_lead_frames": 5, # mocked
+            "hip_lead_frames": int(hip_lead),
             "arm_speed_px_per_frame": float(arm_speed),
-            "spine_angle_at_address_deg": 28.0, # mocked
-            "follow_through_completeness": 0.9 # mocked
+            "spine_angle_at_address_deg": float(spine_angle),
+            "follow_through_completeness": float(ft_score)
         }
         
         q = {

@@ -64,7 +64,7 @@ class SyncService:
                 for swing_id, (sw_time, sw_data) in self.pending_swings.items():
                     # 4. Pair if: |skytrak_time - swing_impact_time| < 2.0 seconds
                     if abs(st_time - sw_time) < 2.0:
-                        await self._create_paired_record(skytrak_id, st_data, swing_id, sw_data)
+                        await self._create_paired_record(skytrak_id, st_time, st_data, swing_id, sw_time, sw_data)
                         paired_skytrak_ids.append(skytrak_id)
                         paired_swing_ids.append(swing_id)
                         break # One to one pairing
@@ -149,14 +149,15 @@ class SyncService:
         except Exception as e:
             logger.error(f"Failed to save swing data to DB: {e}")
 
-    async def _create_paired_record(self, skytrak_id, st_data, swing_id, sw_data):
+    async def _create_paired_record(self, skytrak_id, st_time, st_data, swing_id, sw_time, sw_data):
         now_utc = datetime.now(timezone.utc)
         paired_at_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         
         # Calculate combined quality
         skytrak_present = 1.0 # By definition of pair
         pose_conf = sw_data.get("quality", {}).get("pose_detection_confidence", 0.0)
-        sync_conf = 0.95 # Hardcoded timestamp sync confidence typical
+        time_delta = abs(st_time - sw_time)
+        sync_conf = round(max(0.0, 1.0 - (time_delta / 2.0)), 3)
         
         combined_qual = (skytrak_present * 0.4) + (pose_conf * 0.3) + (sync_conf * 0.3)
         training_app = combined_qual >= 0.75
