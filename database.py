@@ -71,6 +71,25 @@ async def init_db():
                 is_training_approved INTEGER DEFAULT 0
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS coaching_reports (
+                report_id TEXT PRIMARY KEY,
+                session_id TEXT,
+                created_at TEXT,
+                shot_count INTEGER,
+                approved_count INTEGER,
+                model_version TEXT,
+                prompt_tokens INTEGER,
+                response_tokens INTEGER,
+                session_summary TEXT,
+                primary_finding TEXT,
+                coaching_points_json TEXT,
+                next_session_focus TEXT,
+                encouraging_note TEXT,
+                raw_response TEXT,
+                status TEXT
+            )
+        """)
         await db.commit()
 
 async def save_shot(db_record):
@@ -132,3 +151,65 @@ async def save_paired_shot(paired_record: dict):
         """, paired_record)
         await db.commit()
 
+async def get_session_shots(session_id: str):
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT * FROM paired_shots 
+            WHERE session_id = ? AND is_training_approved = 1
+            ORDER BY paired_at ASC
+        """, (session_id,)) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+async def get_history_stats(current_session_id: str):
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT session_id, 
+                   AVG(combined_quality) as avg_quality,
+                   COUNT(*) as shot_count
+            FROM paired_shots
+            WHERE session_id != ?
+            GROUP BY session_id
+            ORDER BY MAX(paired_at) DESC
+            LIMIT 3
+        """, (current_session_id,)) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+async def save_coaching_report(report: dict):
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO coaching_reports (
+                report_id, session_id, created_at, shot_count, approved_count,
+                model_version, prompt_tokens, response_tokens, session_summary,
+                primary_finding, coaching_points_json, next_session_focus,
+                encouraging_note, raw_response, status
+            ) VALUES (
+                :report_id, :session_id, :created_at, :shot_count, :approved_count,
+                :model_version, :prompt_tokens, :response_tokens, :session_summary,
+                :primary_finding, :coaching_points_json, :next_session_focus,
+                :encouraging_note, :raw_response, :status
+            )
+        """, report)
+        await db.commit()
+
+async def get_latest_coaching_report(session_id: str):
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT * FROM coaching_reports 
+            WHERE session_id = ? AND status = 'success'
+            ORDER BY created_at DESC LIMIT 1
+        """, (session_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+async def get_coaching_history(limit: int = 10):
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT * FROM coaching_reports
+            WHERE status = 'success'
+            ORDER BY created_at DESC LIMIT ?
+        """, (limit,)) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
