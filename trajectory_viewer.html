@@ -663,7 +663,10 @@
         }
 
         function connectWS() {
-            const ws = new WebSocket('ws://localhost:8765');
+            const urlParams = new URLSearchParams(window.location.search);
+            const pcIp = urlParams.get('ip') || 'localhost';
+            const pcPort = urlParams.get('wsport') || '8765';
+            const ws = new WebSocket(`ws://${pcIp}:${pcPort}`);
             ws.onopen = () => {
                 document.getElementById('ws-status').style.backgroundColor = '#10b981';
                 document.getElementById('ws-status-text').innerText = 'Connected';

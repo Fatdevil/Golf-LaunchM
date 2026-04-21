@@ -56,11 +56,21 @@ class WebViewFragment : Fragment() {
         retryBtn.setOnClickListener {
             errorView.visibility = View.GONE
             webView.visibility = View.VISIBLE
-            webView.loadUrl(targetUrl)
+            val ip = (activity as? MainActivity)?.getIp() ?: ""
+            val wsUrl = if (targetUrl.contains("trajectory") || 
+                             targetUrl.contains("dashboard")) {
+                "$targetUrl?ip=$ip&wsport=8765"
+            } else targetUrl
+            webView.loadUrl(wsUrl)
         }
 
         if (savedInstanceState == null) {
-            webView.loadUrl(targetUrl)
+            val ip = (activity as? MainActivity)?.getIp() ?: ""
+            val wsUrl = if (targetUrl.contains("trajectory") || 
+                             targetUrl.contains("dashboard")) {
+                "$targetUrl?ip=$ip&wsport=8765"
+            } else targetUrl
+            webView.loadUrl(wsUrl)
         } else {
             webView.restoreState(savedInstanceState)
         }

@@ -132,4 +132,6 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("No", null)
             .show()
     }
+
+    fun getIp(): String = intent.getStringExtra("IP") ?: ""
 }
