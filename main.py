@@ -43,6 +43,7 @@ async def paired_shot_printer(paired_queue, shared_state):
             shared_state["last_shot_time"] = time.time()
             shared_state["shots_today"] += 1
             shared_state["warned_5m"] = False
+            shared_state["coaching_triggered"] = False
             
             st = record.get("skytrak", {})
             sw = record.get("swing", {})

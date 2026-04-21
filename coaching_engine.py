@@ -183,7 +183,7 @@ Respond ONLY with this JSON structure, no other text:
 """
         try:
             response = await anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-20250514",
                 max_tokens=1000,
                 system="You are an expert PGA-certified golf coach with 20 years of experience. You analyze biomechanical data and launch monitor statistics to give precise, actionable coaching advice. Always be specific with numbers. Never give generic advice. Format your response as valid JSON only.",
                 messages=[{"role": "user", "content": prompt}]
@@ -227,7 +227,7 @@ Respond ONLY with this JSON structure, no other text:
             "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
             "shot_count": count,
             "approved_count": count,
-            "model_version": "claude-3-5-sonnet-20241022",
+            "model_version": "claude-sonnet-4-20250514",
             "prompt_tokens": getattr(usage, "input_tokens", 0),
             "response_tokens": getattr(usage, "output_tokens", 0),
             "session_summary": parsed.get("session_summary", ""),
@@ -288,6 +288,12 @@ async def get_history(player_id: str):
     return await get_coaching_history(10)
 
 def start_fastapi():
-    config = uvicorn.Config(app, host="127.0.0.1", port=8766, log_level="warning")
+    import asyncio as _asyncio
+    loop = _asyncio.new_event_loop()
+    _asyncio.set_event_loop(loop)
+    config = uvicorn.Config(
+        app, host="127.0.0.1", 
+        port=8766, log_level="warning"
+    )
     server = uvicorn.Server(config)
-    return server.serve()
+    loop.run_until_complete(server.serve())
