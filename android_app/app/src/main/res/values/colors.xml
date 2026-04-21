@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background_dark">#0a0f1a</color>
+    <color name="background_darker">#05080d</color>
+    <color name="surface_dark">#0f1623</color>
+    <color name="border_dark">#1a2639</color>
+    <color name="accent_cyan">#00d4ff</color>
+    <color name="text_primary">#ffffff</color>
+    <color name="text_secondary">#8899aa</color>
+    <color name="error_red">#ef4444</color>
+    <color name="success_green">#10b981</color>
+    <color name="overlay_semi_transparent">#B30a0f1a</color>
+    <color name="transparent">#00000000</color>
+</resources>

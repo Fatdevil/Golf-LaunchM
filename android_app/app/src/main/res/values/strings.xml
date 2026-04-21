@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Antigravity Golf</string>
+    <string name="connect">CONNECT</string>
+    <string name="retry">RETRY</string>
+    <string name="disconnect">◀ DISCONNECT</string>
+    <string name="reload">⟳ RELOAD</string>
+</resources>
