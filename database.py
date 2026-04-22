@@ -90,6 +90,59 @@ async def init_db():
                 status TEXT
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS measure_results (
+                measure_id TEXT PRIMARY KEY,
+                shot_id TEXT,
+                session_id TEXT,
+                timestamp TEXT,
+                camera_height_cm REAL,
+                camera_tilt_deg REAL,
+                ball_type TEXT,
+                ball_speed_mph_raw REAL,
+                launch_angle_deg_raw REAL,
+                launch_direction_deg_raw REAL,
+                club_speed_mph_raw REAL,
+                carry_yards_estimated REAL,
+                ball_detect_confidence REAL,
+                track_frames INTEGER,
+                impact_confidence REAL,
+                club_detected INTEGER,
+                is_approved INTEGER,
+                rejection_reason TEXT,
+                ball_positions_json TEXT,
+                club_positions_json TEXT,
+                impact_frame INTEGER,
+                sync_status TEXT DEFAULT 'pending'
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS measure_paired (
+                pair_id TEXT PRIMARY KEY,
+                measure_id TEXT,
+                shot_id TEXT,
+                session_id TEXT,
+                paired_at TEXT,
+                camera_ball_speed REAL,
+                camera_launch_angle REAL,
+                camera_direction REAL,
+                camera_club_speed REAL,
+                camera_carry REAL,
+                skytrak_ball_speed REAL,
+                skytrak_launch_angle REAL,
+                skytrak_direction REAL,
+                skytrak_carry REAL,
+                skytrak_total_spin REAL,
+                delta_ball_speed REAL,
+                delta_launch_angle REAL,
+                delta_direction REAL,
+                delta_carry REAL,
+                quality_score REAL,
+                is_training_sample INTEGER DEFAULT 0,
+                camera_height_cm REAL,
+                ball_type TEXT
+            )
+        """)
         await db.commit()
 
 async def save_shot(db_record):
@@ -213,3 +266,49 @@ async def get_coaching_history(limit: int = 10):
             ORDER BY created_at DESC LIMIT ?
         """, (limit,)) as cursor:
             return [dict(row) for row in await cursor.fetchall()]
+
+async def save_measure_result(record: dict):
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO measure_results (
+                measure_id, shot_id, session_id, timestamp,
+                camera_height_cm, camera_tilt_deg, ball_type,
+                ball_speed_mph_raw, launch_angle_deg_raw, launch_direction_deg_raw,
+                club_speed_mph_raw, carry_yards_estimated,
+                ball_detect_confidence, track_frames, impact_confidence,
+                club_detected, is_approved, rejection_reason,
+                ball_positions_json, club_positions_json, impact_frame, sync_status
+            ) VALUES (
+                :measure_id, :shot_id, :session_id, :timestamp,
+                :camera_height_cm, :camera_tilt_deg, :ball_type,
+                :ball_speed_mph_raw, :launch_angle_deg_raw, :launch_direction_deg_raw,
+                :club_speed_mph_raw, :carry_yards_estimated,
+                :ball_detect_confidence, :track_frames, :impact_confidence,
+                :club_detected, :is_approved, :rejection_reason,
+                :ball_positions_json, :club_positions_json, :impact_frame, :sync_status
+            )
+        """, record)
+        await db.commit()
+
+async def save_measure_paired(record: dict):
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO measure_paired (
+                pair_id, measure_id, shot_id, session_id, paired_at,
+                camera_ball_speed, camera_launch_angle, camera_direction,
+                camera_club_speed, camera_carry,
+                skytrak_ball_speed, skytrak_launch_angle, skytrak_direction,
+                skytrak_carry, skytrak_total_spin,
+                delta_ball_speed, delta_launch_angle, delta_direction, delta_carry,
+                quality_score, is_training_sample, camera_height_cm, ball_type
+            ) VALUES (
+                :pair_id, :measure_id, :shot_id, :session_id, :paired_at,
+                :camera_ball_speed, :camera_launch_angle, :camera_direction,
+                :camera_club_speed, :camera_carry,
+                :skytrak_ball_speed, :skytrak_launch_angle, :skytrak_direction,
+                :skytrak_carry, :skytrak_total_spin,
+                :delta_ball_speed, :delta_launch_angle, :delta_direction, :delta_carry,
+                :quality_score, :is_training_sample, :camera_height_cm, :ball_type
+            )
+        """, record)
+        await db.commit()

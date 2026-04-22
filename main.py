@@ -25,6 +25,14 @@ except ImportError as e:
     HAS_COACHING = False
     print(f"Failed to import coaching engine: {e}")
 
+try:
+    from measure_engine import MeasureEngine, MeasureSyncService
+    import models
+    HAS_MEASURE = True
+except ImportError as e:
+    HAS_MEASURE = False
+    print(f"Failed to import measure engine: {e}")
+
 async def queue_router(input_queue, ws_out_queue, sync_out_queue):
     while True:
         try:
@@ -113,13 +121,28 @@ async def main():
     shot_queue = asyncio.Queue()            
     ws_queue = asyncio.Queue()              
     skytrak_sync_queue = asyncio.Queue()    
+    skytrak_sync_queue_copy = asyncio.Queue() # For the measure_sync branch
     swing_queue = asyncio.Queue()           
     paired_queue = asyncio.Queue()          
+    measure_queue = asyncio.Queue()
+    measure_paired_queue = asyncio.Queue()
     processing_queue = asyncio.Queue()      
     
     tasks = []
     
-    tasks.append(asyncio.create_task(queue_router(shot_queue, ws_queue, skytrak_sync_queue)))
+    # We must router a copy to both sync queues if both running
+    async def multi_router(input_q, ws_out_q, sync_q, measure_sync_q):
+        while True:
+            try:
+                item = await input_q.get()
+                ws_payload, shot_id = item
+                await ws_out_q.put(item)
+                await sync_q.put(ws_payload)
+                await measure_sync_q.put(ws_payload)
+            except asyncio.CancelledError:
+                break
+                
+    tasks.append(asyncio.create_task(multi_router(shot_queue, ws_queue, skytrak_sync_queue, skytrak_sync_queue_copy)))
     tasks.append(asyncio.create_task(start_websocket_server(ws_queue)))
     tasks.append(asyncio.create_task(start_gspro_server(session_id, shot_queue)))
     tasks.append(asyncio.create_task(paired_shot_printer(paired_queue, shared_state)))
@@ -141,6 +164,31 @@ async def main():
         
         fa_thread = threading.Thread(target=start_fastapi, daemon=True)
         fa_thread.start()
+        
+    if HAS_MEASURE:
+        measure_config = models.CalibrationConfig(
+            camera_height_cm=110.0,
+            camera_tilt_deg=35.0,
+            camera_index=2
+        )
+        loop = asyncio.get_running_loop()
+        measure_engine = MeasureEngine(
+            camera_index=2,
+            config=measure_config,
+            shot_queue=skytrak_sync_queue_copy,
+            measure_queue=measure_queue,
+            loop=loop
+        )
+        measure_engine.start()
+        
+        measure_sync = MeasureSyncService(
+            skytrak_queue=skytrak_sync_queue_copy,
+            measure_queue=measure_queue,
+            paired_queue=measure_paired_queue
+        )
+        tasks.append(asyncio.create_task(measure_sync.run()))
+    else:
+        print("Measure camera module turned off or missing dependencies.")
     
     try:
         await asyncio.gather(*tasks)
@@ -152,6 +200,8 @@ async def main():
         if HAS_CV:
             c0.stop()
             c1.stop()
+        if HAS_MEASURE:
+            measure_engine.stop()
 
 if __name__ == "__main__":
     if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
