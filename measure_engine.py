@@ -101,7 +101,12 @@ class MeasureEngine:
         self.audio_trigger.start()
         # Calibrate audio baseline for 2 seconds
         self.loop.call_later(2.0, self.audio_trigger.stop_calibration)
-        self.loop.run_in_executor(self.thread_pool, self._capture_loop)
+        import threading
+        t = threading.Thread(
+            target=self._capture_loop, daemon=True
+        )
+        t.start()
+        self._capture_thread = t
 
     def stop(self):
         self.running = False
@@ -115,9 +120,10 @@ class MeasureEngine:
         H_mm = self.config.camera_height_cm * 10
         tilt_rad = np.radians(self.config.camera_tilt_deg)
         
-        # Simple camera projection math
-        # pixels_per_mm = frame_height / (2 * H * tan(tilt/2))
-        self.config.pixels_per_mm = frame_height / (2 * H_mm * np.tan(tilt_rad / 2))
+        ground_coverage_mm = 2 * H_mm / np.tan(tilt_rad)
+        self.config.pixels_per_mm = (
+            frame_height / ground_coverage_mm
+        )
         
         # Ground plane assumed at lower 20% of frame if not auto-detected
         self.config.ground_plane_y = int(frame_height * 0.8)
@@ -267,9 +273,10 @@ class MeasureEngine:
         return positions
 
     def detect_club(self, frames, impact_frame_idx):
-        # Extract club_path from 5 frames before impact
+        # TODO: Club detection not implemented (MVP).
+        # club_speed_mph = 0.0 in all results until built.
+        # Track darkest fast-moving blob in pre-impact frames.
         club_positions = []
-        # Simplified: fallback logic
         return club_positions
 
     def calculate_raw_measurements(self, ball_positions, club_positions, fps):
@@ -393,15 +400,32 @@ class MeasureSyncService:
 
                 # Prune old data (> 10 seconds)
                 now = time.time()
+                
+                def _parse_ts(s):
+                    try:
+                        from datetime import datetime
+                        return datetime.fromisoformat(
+                            s.get("timestamp","").replace("Z","")
+                        ).timestamp()
+                    except:
+                        return time.time()
+                
                 self.recent_measure = [m for m in self.recent_measure if now - float(m.timestamp) < 10.0]
-                self.recent_skytrak = [s for s in self.recent_skytrak if now - float(s.time_received) < 10.0 if hasattr(s, "time_received")]
+                self.recent_skytrak = [
+                    s for s in self.recent_skytrak 
+                    if now - _parse_ts(s) < 10.0
+                ]
                 
                 # Pair logic
                 for m in list(self.recent_measure):
                     for idx, st in enumerate(self.recent_skytrak):
                         # Combine if within 5 seconds
+                        from datetime import datetime
+                        ts_str = st.get("timestamp", "")
                         try:
-                            st_time = float(st.get("time_received", now))
+                            st_time = datetime.fromisoformat(
+                                ts_str.replace("Z","")
+                            ).timestamp()
                         except:
                             st_time = now
                             
