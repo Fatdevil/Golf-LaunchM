@@ -265,11 +265,23 @@ class MeasureEngine:
                     self.impact_frame_idx = impact_idx - start_idx
                     
                     # Submit for processing asynchronously
-                    self.loop.run_in_executor(self.thread_pool, self._process_clip, clip, self.impact_frame_idx, current_time)
+                    prestrike_snap = self.prestrike_ball_pos
+                    prestrike_conf_snap = self.prestrike_confidence
+                    ball_locked_snap = self.ball_locked
+  
+                    self.loop.run_in_executor(
+                        self.thread_pool, self._process_clip,
+                        clip, self.impact_frame_idx, 
+                        current_time, prestrike_snap,
+                        prestrike_conf_snap, ball_locked_snap
+                    )
                     
-                    # Reset state for next shot
+                    # Reset immediately after snapshot (safe):
                     self.impact_time = 0.0
                     self.impact_frame_idx = -1
+                    self.prestrike_ball_pos = None
+                    self.ball_locked = False
+                    self.prestrike_frames_checked = 0
 
             frame_idx += 1
 
@@ -306,7 +318,10 @@ class MeasureEngine:
                         
         return best_ball
 
-    def track_ball_trajectory(self, frames, impact_frame_idx):
+    def track_ball_trajectory(self, frames, 
+                               impact_frame_idx,
+                               prestrike_pos=None,
+                               prestrike_conf=0.0):
         positions = [] # [x, y, frame_idx, conf]
         
         kf = cv2.KalmanFilter(4, 2)
@@ -319,11 +334,11 @@ class MeasureEngine:
         roi_rect = (int(w*0.2), int(h*0.5), int(w*0.6), int(h*0.4)) # Initial roi around ground
         
         kalman_seeded = False
-        if self.prestrike_ball_pos is not None:
-            seed_x, seed_y = self.prestrike_ball_pos
+        if prestrike_pos is not None:
+            seed_x, seed_y = prestrike_pos
             kf.statePre = np.array([[seed_x], [seed_y], [0], [0]], np.float32)
             kf.statePost = np.array([[seed_x], [seed_y], [0], [0]], np.float32)
-            positions.append([seed_x, seed_y, impact_frame_idx - 1, self.prestrike_confidence])
+            positions.append([seed_x, seed_y, impact_frame_idx - 1, prestrike_conf])
             kalman_seeded = True
         
         for i in range(impact_frame_idx, len(frames)):
@@ -333,7 +348,7 @@ class MeasureEngine:
                 positions.append([bx, by, i, conf])
                 
                 # init kf on first find
-                if len(positions) == 1:
+                if len(positions) == 1 and not kalman_seeded:
                     kf.statePre = np.array([[bx], [by], [0], [0]], np.float32)
                     kf.statePost = np.array([[bx], [by], [0], [0]], np.float32)
                 else:
@@ -397,10 +412,13 @@ class MeasureEngine:
         
         return ball_speed_mph, v_ms, launch_angle_deg, direction_deg, carry_yards
 
-    def _process_clip(self, frames, impact_frame_idx, timestamp):
+    def _process_clip(self, frames, impact_frame_idx,
+                      timestamp, prestrike_pos=None,
+                      prestrike_conf=0.0, 
+                      ball_locked=False):
         fps = 60.0
         
-        ball_positions = self.track_ball_trajectory(frames, impact_frame_idx)
+        ball_positions = self.track_ball_trajectory(frames, impact_frame_idx, prestrike_pos, prestrike_conf)
         club_positions = self.detect_club(frames, impact_frame_idx)
         
         b_mph, b_ms, l_angle, l_dir, carry = self.calculate_raw_measurements(ball_positions, club_positions, fps)
@@ -436,18 +454,14 @@ class MeasureEngine:
         if result.ball_speed_mph < 10 or result.ball_speed_mph > 220: result.is_approved = False; result.rejection_reason = "Impossible ball speed"
         if result.launch_angle_deg < -5 or result.launch_angle_deg > 60: result.is_approved = False; result.rejection_reason = "Launch angle out of bounds"
         
-        self.print_measurement(result)
+        self.print_measurement(result, was_locked=ball_locked)
         
         asyncio.run_coroutine_threadsafe(self.measure_queue.put(result), self.loop)
-        
-        self.prestrike_ball_pos = None
-        self.ball_locked = False
-        self.prestrike_frames_checked = 0
 
-    def print_measurement(self, r: MeasureResult):
+    def print_measurement(self, r: MeasureResult, was_locked=False):
         dir_str = f"{abs(r.launch_direction_deg):.1f}° " + ("R" if r.launch_direction_deg > 0 else "L")
         conf_icon = "✓" if r.is_approved else "✗"
-        lock_str = "🔒 PRE-LOCK" if self.ball_locked else "⚠ NO LOCK"
+        lock_str = "🔒 PRE-LOCK" if was_locked else "⚠ NO LOCK"
         
         print("  ┌─────────────────────────────────────┐")
         print("  │  MEASURE ENGINE                     │")
