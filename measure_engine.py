@@ -89,6 +89,11 @@ class MeasureEngine:
         self.frame_buffer = []  # stores (time, frame, index)
         self.buffer_size = 60   # 1 second at 60fps
         
+        self.prestrike_ball_pos = None
+        self.prestrike_confidence = 0.0
+        self.ball_locked = False
+        self.prestrike_frames_checked = 0
+        
         self.audio_trigger = AudioTrigger(self._on_audio_impact)
 
     def _on_audio_impact(self, timestamp: float):
@@ -128,6 +133,69 @@ class MeasureEngine:
         # Ground plane assumed at lower 20% of frame if not auto-detected
         self.config.ground_plane_y = int(frame_height * 0.8)
         logger.info(f"Geometry calibrated: {self.config.pixels_per_mm:.4f} px/mm, Ground Y: {self.config.ground_plane_y}")
+
+    def _find_prestrike_ball(self, frame) -> bool:
+        """
+        Scans a narrow horizontal ROI at ground level
+        for a stationary white ball.
+        Called every 10 frames when impact_time == 0.0.
+        
+        ROI: full frame width, centered on ground_plane_y
+             height = 80px (ball sits still, tight crop)
+        
+        If ball found in same position ±5px for 3 
+        consecutive checks → ball_locked = True
+        
+        Returns True if ball is locked.
+        """
+        
+        # ROI: narrow horizontal band at ground plane
+        roi_y = max(0, self.config.ground_plane_y - 40)
+        roi_rect = (
+            int(frame.shape[1] * 0.15),  # x: skip edges
+            roi_y,
+            int(frame.shape[1] * 0.70),  # w: center 70%
+            80                           # h: tight band
+        )
+        
+        ball = self.detect_ball_classical(frame, roi_rect)
+        
+        if ball:
+            bx, by, conf, _ = ball
+            
+            if self.prestrike_ball_pos is not None:
+                prev_x, prev_y = self.prestrike_ball_pos
+                # Ball is stable if it hasn't moved
+                if abs(bx - prev_x) <= 5 and abs(by - prev_y) <= 5:
+                    self.prestrike_frames_checked += 1
+                else:
+                    # Ball moved (maybe someone nudged it)
+                    # Reset and relock
+                    self.prestrike_frames_checked = 1
+            else:
+                self.prestrike_frames_checked = 1
+            
+            self.prestrike_ball_pos = (bx, by)
+            self.prestrike_confidence = conf
+            
+            if self.prestrike_frames_checked >= 3:
+                if not self.ball_locked:
+                    self.ball_locked = True
+                    logger.info(
+                        f"[MEASURE] ● Ball locked — ready for impact at ({bx}, {by}) "
+                        f"conf={conf:.2f}"
+                    )
+            return self.ball_locked
+        
+        else:
+            # Ball not found — reset lock
+            # (ball removed from tee between shots)
+            if self.ball_locked:
+                logger.info("Ball lock lost — ball removed?")
+            self.ball_locked = False
+            self.prestrike_ball_pos = None
+            self.prestrike_frames_checked = 0
+            return False
 
     def _capture_loop(self):
         self.cap = cv2.VideoCapture(self.camera_index)
@@ -174,6 +242,10 @@ class MeasureEngine:
             self.frame_buffer.append((current_time, frame, frame_idx))
             if len(self.frame_buffer) > self.buffer_size:
                 self.frame_buffer.pop(0)
+
+            # Every 10 frames, scan for ball pre-strike
+            if self.impact_time == 0.0 and frame_idx % 10 == 0:
+                self._find_prestrike_ball(frame)
 
             # Check if 25 frames have passed since impact
             if self.impact_time > 0 and len(self.frame_buffer) >= 30:
@@ -245,6 +317,14 @@ class MeasureEngine:
         h, w = frames[impact_frame_idx].shape[:2]
         
         roi_rect = (int(w*0.2), int(h*0.5), int(w*0.6), int(h*0.4)) # Initial roi around ground
+        
+        kalman_seeded = False
+        if self.prestrike_ball_pos is not None:
+            seed_x, seed_y = self.prestrike_ball_pos
+            kf.statePre = np.array([[seed_x], [seed_y], [0], [0]], np.float32)
+            kf.statePost = np.array([[seed_x], [seed_y], [0], [0]], np.float32)
+            positions.append([seed_x, seed_y, impact_frame_idx - 1, self.prestrike_confidence])
+            kalman_seeded = True
         
         for i in range(impact_frame_idx, len(frames)):
             ball = self.detect_ball_classical(frames[i], roi_rect)
@@ -359,14 +439,20 @@ class MeasureEngine:
         self.print_measurement(result)
         
         asyncio.run_coroutine_threadsafe(self.measure_queue.put(result), self.loop)
+        
+        self.prestrike_ball_pos = None
+        self.ball_locked = False
+        self.prestrike_frames_checked = 0
 
     def print_measurement(self, r: MeasureResult):
         dir_str = f"{abs(r.launch_direction_deg):.1f}° " + ("R" if r.launch_direction_deg > 0 else "L")
         conf_icon = "✓" if r.is_approved else "✗"
+        lock_str = "🔒 PRE-LOCK" if self.ball_locked else "⚠ NO LOCK"
         
         print("  ┌─────────────────────────────────────┐")
         print("  │  MEASURE ENGINE                     │")
         print("  ├─────────────────────────────────────┤")
+        print(f"  │  Ball Lock:    {lock_str:<20}│")
         print(f"  │  Ball Speed:   {r.ball_speed_mph:6.1f} mph  (raw)    │")
         print(f"  │  Launch Angle: {r.launch_angle_deg:6.1f}°    (raw)     │")
         print(f"  │  Direction:    {dir_str:6s}      (raw)     │")
