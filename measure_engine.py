@@ -12,13 +12,14 @@ import logging
 logger = logging.getLogger("MeasureEngine")
 
 class AudioTrigger:
-    def __init__(self, callback, device_index=None):
+    def __init__(self, callback, device_index=None, sensitivity_multiplier=15.0):
         self.callback = callback
         self.baseline_rms = 0.0
         self.is_calibrating = True
         self.stream = None
         self.device_index = device_index
         self.has_sounddevice = False
+        self.sensitivity_multiplier = sensitivity_multiplier
         
         try:
             import sounddevice as sd
@@ -55,8 +56,8 @@ class AudioTrigger:
             self.baseline_rms = self.baseline_rms * 0.95 + rms * 0.05
             return
         
-        # Impact = RMS spike > 15x baseline
-        if self.baseline_rms > 0 and rms > self.baseline_rms * 15:
+        # Impact = RMS spike > Nx baseline
+        if self.baseline_rms > 0 and rms > self.baseline_rms * self.sensitivity_multiplier:
             import time
             self.callback(time.time())
 
@@ -94,7 +95,8 @@ class MeasureEngine:
         self.ball_locked = False
         self.prestrike_frames_checked = 0
         
-        self.audio_trigger = AudioTrigger(self._on_audio_impact)
+        audio_sens = 3.0 if self.config.mode == "putt" else 15.0
+        self.audio_trigger = AudioTrigger(self._on_audio_impact, sensitivity_multiplier=audio_sens)
 
     def _on_audio_impact(self, timestamp: float):
         if self.impact_time == 0.0:
@@ -332,6 +334,9 @@ class MeasureEngine:
         h, w = frames[impact_frame_idx].shape[:2]
         
         roi_rect = (int(w*0.2), int(h*0.5), int(w*0.6), int(h*0.4)) # Initial roi around ground
+        if self.config.mode == "putt":
+            roi_y = max(0, self.config.ground_plane_y - 40)
+            roi_rect = (int(w*0.2), roi_y, int(w*0.6), 80) # Tight band along the ground
         
         kalman_seeded = False
         if prestrike_pos is not None:
@@ -450,8 +455,9 @@ class MeasureEngine:
         )
         
         # Quality check
+        min_speed = 1.0 if self.config.mode == "putt" else 10.0
         if result.track_frames < 5: result.is_approved = False; result.rejection_reason = "Track length too short"
-        if result.ball_speed_mph < 10 or result.ball_speed_mph > 220: result.is_approved = False; result.rejection_reason = "Impossible ball speed"
+        if result.ball_speed_mph < min_speed or result.ball_speed_mph > 220: result.is_approved = False; result.rejection_reason = "Impossible ball speed"
         if result.launch_angle_deg < -5 or result.launch_angle_deg > 60: result.is_approved = False; result.rejection_reason = "Launch angle out of bounds"
         
         self.print_measurement(result, was_locked=ball_locked)

@@ -32,6 +32,7 @@ class CalibrationConfig:
     camera_index: int = 2
     pixels_per_mm: float = 0.0
     ground_plane_y: int = 0
+    mode: str = "full"  # 'full' or 'putt'
 
 @dataclass  
 class MeasureResult:
